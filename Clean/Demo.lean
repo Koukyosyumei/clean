@@ -58,6 +58,12 @@ def checkConstraintsBool (eval : Environment (F p)) : List (Operation (F p)) →
   | .subcircuit s :: ops =>
     ConstraintsHoldFlatBool eval s.ops.toFlat ∧ checkConstraintsBool eval ops
 
+---
+--  Modified macro based on `#lspec`
+---
+macro "#lspec' " term:term : command =>
+  `(#eval! LSpec.runInTermElabMAsUnit $term)
+
 namespace WrongCircuit
 
 ---
@@ -71,7 +77,7 @@ def main (input : Expression (F p)) := do
   input * out === 0
   return out
 
-def circuit : FormalCircuit (F p) field field where
+abbrev circuit : FormalCircuit (F p) field field where
   main
   localLength _ := 1
 
@@ -91,15 +97,10 @@ def circuit : FormalCircuit (F p) field field where
 def test_completeness (input : F p) : Bool :=
   -- NOTE: we cannot use lspec-check when expressions contain `sorry`.
   --       Thus, we redefine the assumption without using `circuit`.
-  if input.val < 3 then
+  decide (circuit.Assumptions input) →
     let input_val := Expression.const input
     let env := (circuit.main input_val).proverEnvironment []
     checkConstraintsBool env (circuit.main input_val |>.operations 0)
-  else
-    true
-
-macro "#lspec' " term:term : command =>
-  `(#eval! LSpec.runInTermElabMAsUnit $term)
 
 -- Run the test. SlimCheck will quickly find that 'input := 2' fails.
 instance : Fact (Nat.Prime 7) := ⟨by decide⟩
