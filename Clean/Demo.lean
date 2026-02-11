@@ -32,14 +32,6 @@ def circuit : FormalCircuit (F p) field field where
   soundness := sorry
   completeness := sorry
 
-def test_completeness (input : F p) : Prop :=
-  let c := circuit
-  -- If our (wrong) assumption holds...
-  (input.val < 3) →
-    -- ...then an honest prover should be able to satisfy the constraints.
-    let env := (c.main (const input)).proverEnvironment [input]
-    ConstraintsHold env (c.main (const input) |>.operations 0)
-
 instance : Fact (Nat.Prime 7) := ⟨by decide⟩
 
 instance {p : ℕ} [Fact (Nat.Prime p)] : Repr (F p) where
@@ -53,6 +45,13 @@ instance : SampleableExt (F 7) where
   sample := SampleableExt.interpSample Nat  -- Nat のサンプラー（0から順に大きくなる）を利用
   interp n := (n : F 7)       -- Nat を F 7 に変換するロジック
 
+def ConstraintsHoldFlatBool (eval : Environment (F p)) : List (FlatOperation (F p)) → Bool
+  | [] => True
+  | op :: ops => match op with
+    | FlatOperation.assert e => (eval e = 0) ∧ ConstraintsHoldFlatBool eval ops
+    | FlatOperation.lookup l => ConstraintsHoldFlatBool eval ops
+    | _ => ConstraintsHoldFlatBool eval ops
+
 def checkConstraintsBool (eval : Environment (F p)) : List (Operation (F p)) → Bool
   | [] => True
   | .witness _ _ :: ops => checkConstraintsBool eval ops
@@ -60,7 +59,7 @@ def checkConstraintsBool (eval : Environment (F p)) : List (Operation (F p)) →
   | .lookup l :: ops =>
     checkConstraintsBool eval ops
   | .subcircuit s :: ops =>
-    checkConstraintsBool eval ops
+    ConstraintsHoldFlatBool eval s.ops.toFlat ∧ checkConstraintsBool eval ops
 
 def test_completeness' (input : F p) : Bool :=
   if input.val < 3 then
@@ -70,8 +69,15 @@ def test_completeness' (input : F p) : Bool :=
   else
     true
 
+def test_completeness'' (input : F p) : Bool :=
+  if input.val < 3 then
+    let env := (main (Expression.const input)).proverEnvironment []
+    checkConstraintsBool env (main (input) |>.operations 0)
+  else
+    true
+
 #lspec check "Catching the wrong range assumption" $
-  ∀ (input : F 7), test_completeness' input
+  ∀ (input : F 7), test_completeness'' input
 
 #lspec check "Catching the wrong range assumption" $
   ∀ (input : F 7), input.val < 3 → (input - 1) * input = 0
