@@ -12,6 +12,22 @@ open Circuit ProvableType
 
 variable {p : ℕ} [Fact p.Prime] [Fact (p > 2)]
 
+def ConstraintsHoldFlatBool (eval : Environment (F p)) : List (FlatOperation (F p)) → Bool
+  | [] => True
+  | op :: ops => match op with
+    | FlatOperation.assert e => (eval e = 0) ∧ ConstraintsHoldFlatBool eval ops
+    | FlatOperation.lookup l => ConstraintsHoldFlatBool eval ops -- TODO: correctly support lookup
+    | _ => ConstraintsHoldFlatBool eval ops
+
+def checkConstraintsBool (eval : Environment (F p)) : List (Operation (F p)) → Bool
+  | [] => True
+  | .witness _ _ :: ops => checkConstraintsBool eval ops
+  | .assert e :: ops => eval e = 0 ∧ checkConstraintsBool eval ops
+  | .lookup l :: ops =>
+    checkConstraintsBool eval ops -- TODO: correctly support lookup
+  | .subcircuit s :: ops =>
+    ConstraintsHoldFlatBool eval s.ops.toFlat ∧ checkConstraintsBool eval ops
+
 namespace WrongCircuit
 
 def main (input : Expression (F p)) := do
@@ -23,7 +39,7 @@ def circuit : FormalCircuit (F p) field field where
   main
   localLength _ := 1
 
-  -- WRONG ASSUMPTION: This is too large
+  -- WRONG ASSUMPTION: This is too large, and input=2 cannot satisfy the constraint
   Assumptions input := input.val < 3
 
   Spec input output := output.val = input.val - 1 -- Simplified spec
@@ -41,35 +57,14 @@ instance : Shrinkable (F 7) where
   shrink x := (Shrinkable.shrink x.val).map fun n => (n : F 7)
 
 instance : SampleableExt (F 7) where
-  proxy := Nat                -- 代理として Nat を使用
-  sample := SampleableExt.interpSample Nat  -- Nat のサンプラー（0から順に大きくなる）を利用
-  interp n := (n : F 7)       -- Nat を F 7 に変換するロジック
+  -- for now, use Nat as a proxy type for sampling.
+  proxy := Nat
+  sample := SampleableExt.interpSample Nat
+  interp n := (n : F 7)
 
-def ConstraintsHoldFlatBool (eval : Environment (F p)) : List (FlatOperation (F p)) → Bool
-  | [] => True
-  | op :: ops => match op with
-    | FlatOperation.assert e => (eval e = 0) ∧ ConstraintsHoldFlatBool eval ops
-    | FlatOperation.lookup l => ConstraintsHoldFlatBool eval ops
-    | _ => ConstraintsHoldFlatBool eval ops
-
-def checkConstraintsBool (eval : Environment (F p)) : List (Operation (F p)) → Bool
-  | [] => True
-  | .witness _ _ :: ops => checkConstraintsBool eval ops
-  | .assert e :: ops => eval e = 0 ∧ checkConstraintsBool eval ops
-  | .lookup l :: ops =>
-    checkConstraintsBool eval ops
-  | .subcircuit s :: ops =>
-    ConstraintsHoldFlatBool eval s.ops.toFlat ∧ checkConstraintsBool eval ops
-
-def test_completeness' (input : F p) : Bool :=
-  if input.val < 3 then
-    -- 'circuit.main' ではなく 'myCircuitMain' を直接呼び出す
-    let env := (main (input)).proverEnvironment [input]
-    checkConstraintsBool env (main (input) |>.operations 0)
-  else
-    true
-
-def test_completeness'' (input : F p) : Bool :=
+-- NOTE: we cannot use lspec-check when expressions contain `sorry`.
+--       Thus, we redefine the assumption without using `circuit`.
+def test_completeness (input : F p) : Bool :=
   if input.val < 3 then
     let env := (main (Expression.const input)).proverEnvironment []
     checkConstraintsBool env (main (input) |>.operations 0)
@@ -77,9 +72,6 @@ def test_completeness'' (input : F p) : Bool :=
     true
 
 #lspec check "Catching the wrong range assumption" $
-  ∀ (input : F 7), test_completeness'' input
-
-#lspec check "Catching the wrong range assumption" $
-  ∀ (input : F 7), input.val < 3 → (input - 1) * input = 0
+  ∀ (input : F 7), test_completeness input
 
 end WrongCircuit
