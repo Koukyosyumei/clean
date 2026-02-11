@@ -6,11 +6,24 @@ open LSpec
 open LSpec SlimCheck
 open Circuit ProvableType
 
-#lspec test "Nat equality" (4 ≠ 5)
-#lspec test "all lt" $ ∀ n, n < 10 → n - 5 < 5
---#lspec test "all lt" $ ∀ n, n < 15 → n - 10 = 0
+/-!
+## PoC: Applying LSpec to Clean Circuits for Automated Bug Detection
+
+This file demonstrates how to use LSpec to verify the "Completeness" of a circuit
+written in the Clean framework. The core idea is to find inputs that satisfy our
+`Assumptions` but fail the circuit's constraints, indicating a flaw in the
+specification or circuit logic.
+
+TODO: testing the "Soundness" property
+-/
 
 variable {p : ℕ} [Fact p.Prime] [Fact (p > 2)]
+
+---
+-- Clean's `ConstraintsHold` is a logical Proposition (Prop), which cannot be
+-- directly executed during a test.
+-- We define a Bool-returning version to act as our testing oracle.
+---
 
 def ConstraintsHoldFlatBool (eval : Environment (F p)) : List (FlatOperation (F p)) → Bool
   | [] => True
@@ -30,6 +43,12 @@ def checkConstraintsBool (eval : Environment (F p)) : List (Operation (F p)) →
 
 namespace WrongCircuit
 
+---
+-- The Target Circuit
+-- This circuit is designed to satisfy input * (input - 1) = 0.
+-- It is only satisfiable only for input values 0 and 1.
+---
+
 def main (input : Expression (F p)) := do
   let out <== input - 1
   input * out === 0
@@ -48,6 +67,12 @@ def circuit : FormalCircuit (F p) field field where
   soundness := sorry
   completeness := sorry
 
+end WrongCircuit
+
+---
+-- LSpec Infrastructure for Finite Fields
+---
+
 instance : Fact (Nat.Prime 7) := ⟨by decide⟩
 
 instance {p : ℕ} [Fact (Nat.Prime p)] : Repr (F p) where
@@ -62,16 +87,19 @@ instance : SampleableExt (F 7) where
   sample := SampleableExt.interpSample Nat
   interp n := (n : F 7)
 
--- NOTE: we cannot use lspec-check when expressions contain `sorry`.
---       Thus, we redefine the assumption without using `circuit`.
+---
+-- Property-Based Test Execution
+---
+
 def test_completeness (input : F p) : Bool :=
+  -- NOTE: we cannot use lspec-check when expressions contain `sorry`.
+  --       Thus, we redefine the assumption without using `circuit`.
   if input.val < 3 then
-    let env := (main (Expression.const input)).proverEnvironment []
-    checkConstraintsBool env (main (input) |>.operations 0)
+    let env := (WrongCircuit.main (Expression.const input)).proverEnvironment []
+    checkConstraintsBool env (WrongCircuit.main (input) |>.operations 0)
   else
     true
 
+-- Run the test. SlimCheck will quickly find that 'input := 2' fails.
 #lspec check "Catching the wrong range assumption" $
   ∀ (input : F 7), test_completeness input
-
-end WrongCircuit
