@@ -2,6 +2,7 @@ import LSpec
 import LSpec.SlimCheck
 import LSpec.SlimCheck.Gen
 import Clean.Circuit
+open Lean Elab
 
 open LSpec
 open LSpec SlimCheck
@@ -21,6 +22,19 @@ TODO: testing the "Soundness" property
 -/
 
 variable {p : ℕ} [Fact p.Prime] [Fact (p > 2)]
+
+---
+-- LSpec Infrastructure for Finite Fields
+---
+
+instance {p : ℕ} [Fact (Nat.Prime p)] : Repr (F p) where
+  reprPrec x _ := repr (x.val)
+
+instance {p : ℕ} [Fact (Nat.Prime p)] : Shrinkable (F p) where
+  shrink x := (Shrinkable.shrink x.val).map fun n => (n : F p)
+
+instance {p : ℕ} [Fact (Nat.Prime p)] : SampleableExt (F p) :=
+  SampleableExt.mkSelfContained (do choose (Fin p) (Fin.ofNat p 0) (Fin.ofNat p (← getSize)))
 
 ---
 -- Clean's `ConstraintsHold` is a logical Proposition (Prop), which cannot be
@@ -70,21 +84,6 @@ def circuit : FormalCircuit (F p) field field where
   soundness := sorry
   completeness := sorry
 
-end WrongCircuit
-
----
--- LSpec Infrastructure for Finite Fields
----
-
-instance {p : ℕ} [Fact (Nat.Prime p)] : Repr (F p) where
-  reprPrec x _ := repr (x.val)
-
-instance {p : ℕ} [Fact (Nat.Prime p)] : Shrinkable (F p) where
-  shrink x := (Shrinkable.shrink x.val).map fun n => (n : F p)
-
-instance {p : ℕ} [Fact (Nat.Prime p)] : SampleableExt (F p) :=
-  SampleableExt.mkSelfContained (do choose (Fin p) (Fin.ofNat p 0) (Fin.ofNat p (← getSize)))
-
 ---
 -- Property-Based Test Execution
 ---
@@ -93,12 +92,18 @@ def test_completeness (input : F p) : Bool :=
   -- NOTE: we cannot use lspec-check when expressions contain `sorry`.
   --       Thus, we redefine the assumption without using `circuit`.
   if input.val < 3 then
-    let env := (WrongCircuit.main (Expression.const input)).proverEnvironment []
-    checkConstraintsBool env (WrongCircuit.main (input) |>.operations 0)
+    let input_val := Expression.const input
+    let env := (circuit.main input_val).proverEnvironment []
+    checkConstraintsBool env (circuit.main input_val |>.operations 0)
   else
     true
 
+macro "#lspec' " term:term : command =>
+  `(#eval! LSpec.runInTermElabMAsUnit $term)
+
 -- Run the test. SlimCheck will quickly find that 'input := 2' fails.
 instance : Fact (Nat.Prime 7) := ⟨by decide⟩
-#lspec check "Catching the wrong range assumption" $
+#lspec' check "Catching the wrong range assumption" $
   ∀ (input : F 7), test_completeness input
+
+end WrongCircuit
