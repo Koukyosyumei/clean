@@ -1,9 +1,12 @@
 import LSpec
 import LSpec.SlimCheck
+import LSpec.SlimCheck.Gen
 import Clean.Circuit
 
 open LSpec
 open LSpec SlimCheck
+open Random
+open Gen
 open Circuit ProvableType
 
 /-!
@@ -73,19 +76,14 @@ end WrongCircuit
 -- LSpec Infrastructure for Finite Fields
 ---
 
-instance : Fact (Nat.Prime 7) := ⟨by decide⟩
-
 instance {p : ℕ} [Fact (Nat.Prime p)] : Repr (F p) where
   reprPrec x _ := repr (x.val)
 
-instance : Shrinkable (F 7) where
-  shrink x := (Shrinkable.shrink x.val).map fun n => (n : F 7)
+instance {p : ℕ} [Fact (Nat.Prime p)] : Shrinkable (F p) where
+  shrink x := (Shrinkable.shrink x.val).map fun n => (n : F p)
 
-instance : SampleableExt (F 7) where
-  -- for now, use Nat as a proxy type for sampling.
-  proxy := Nat
-  sample := SampleableExt.interpSample Nat
-  interp n := (n : F 7)
+instance {p : ℕ} [Fact (Nat.Prime p)] : SampleableExt (F p) :=
+  SampleableExt.mkSelfContained (do choose (Fin p) (Fin.ofNat p 0) (Fin.ofNat p (← getSize)))
 
 ---
 -- Property-Based Test Execution
@@ -101,5 +99,6 @@ def test_completeness (input : F p) : Bool :=
     true
 
 -- Run the test. SlimCheck will quickly find that 'input := 2' fails.
+instance : Fact (Nat.Prime 7) := ⟨by decide⟩
 #lspec check "Catching the wrong range assumption" $
   ∀ (input : F 7), test_completeness input
