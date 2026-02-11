@@ -95,8 +95,6 @@ abbrev circuit : FormalCircuit (F p) field field where
 ---
 
 def test_completeness (input : F p) : Bool :=
-  -- NOTE: we cannot use lspec-check when expressions contain `sorry`.
-  --       Thus, we redefine the assumption without using `circuit`.
   decide (circuit.Assumptions input) →
     let input_val := Expression.const input
     let env := (circuit.main input_val).proverEnvironment []
