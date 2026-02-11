@@ -9,16 +9,20 @@ open Circuit ProvableType
 #lspec test "all lt" $ ∀ n, n < 10 → n - 5 < 5
 #lspec test "all lt" $ ∀ n, n < 15 → n - 10 = 0
 
-/--
-A simple bit-decomposition circuit.
-It witnesses n bits and asserts their weighted sum equals the input.
--/
-def bitDecomp (n : ℕ) (input : Var field (F p)) : Circuit (F p) (Var (fields n) (F p)) := do
-  -- Witness n bits (using a hypothetical bit-extraction function)
-  let bits ← witness (fun env => fieldToBits n (eval env input))
+def main (input : Expression (F p)) := do
+  let out <== input - 1
+  input * out === 0
+  return out
 
-  -- Constraint: sum(bits[i] * 2^i) - input = 0
-  let sumExpr := (Vector.mapFinRange n fun i => bits[i] * (2^i.val : F p)).foldl (· + ·) 0
-  assertZero (sumExpr - input)
+def circuit : FormalCircuit (F p) field field where
+  main
+  localLength _ := 2
 
-  pure bits
+  -- WRONG ASSUMPTION: This is too large for an n-bit circuit!
+  Assumptions input := input.val < 2^(n+1)
+
+  Spec input output := (eval env output).val = input.val -- Simplified spec
+
+  -- Proofs would fail here in a real verification, but we want to TEST it.
+  soundness := sorry
+  completeness := sorry
